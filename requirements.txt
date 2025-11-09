@@ -1,0 +1,13 @@
+# requirements.txt
+flask==2.3.3
+waitress==2.1.2
+pandas==2.0.3
+numpy==1.24.3
+scikit-learn==1.6.1
+matplotlib==3.7.2
+seaborn==0.12.2
+pyarrow>=10.0.0
+fastparquet>=2023.1.0
+jupyter>=1.0.0
+jupyterlab>=3.5.0
+scipy>=1.9.0

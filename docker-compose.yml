@@ -1,0 +1,36 @@
+# docker-compose.yml
+services:
+  ml-api:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: ml-api-container
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Опционально: можно добавить Jupyter для анализа
+  jupyter:
+    image: jupyter/datascience-notebook:latest
+    container_name: jupyter-analysis
+    ports:
+      - "8888:8888"
+    volumes:
+      - .:/home/jovyan/work
+    working_dir: /home/jovyan/work
+    environment:
+      - JUPYTER_TOKEN=ml2024
+    restart: unless-stopped
