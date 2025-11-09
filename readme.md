@@ -218,20 +218,3 @@ netstat -tulpn | grep :8000
 # Остановить conflicting процессы
 sudo lsof -ti:8000 | xargs kill -9
 ```
-
-## 📄 Лицензия
-
-MIT License
-
-## 👥 Контакты
-
-- Автор: [Your Name]
-- Email: your.email@example.com
-- GitHub: [username](https://github.com/username)
-
----
-
-**🚀 Happy Coding!**
-```
-
-Этот README покрывает все аспекты проекта: от быстрого старта до troubleshooting. Теперь можно смело пушить на GitHub! 🎯
