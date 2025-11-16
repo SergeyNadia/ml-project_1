@@ -1,15 +1,17 @@
-# api.py
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 from flask import Flask, request, jsonify
-import pandas as pd
-import numpy as np
-import pickle
-import os
-import time
 import logging
-from script_1 import DataPreprocessor
+import os
+from inference import InferenceEngine
+from config import config
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -17,152 +19,51 @@ app = Flask(__name__)
 # Глобальная переменная для движка
 inference_engine = None
 
-# АБСОЛЮТНЫЕ пути к файлам
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, 'models', 'best_model.pkl')
-PREPROCESSOR_PATH = os.path.join(BASE_DIR, 'models', 'preprocessor.pkl')
-
-logger.info(f"🔍 Пути к файлам:")
-logger.info(f"   Модель: {MODEL_PATH}")
-logger.info(f"   Препроцессор: {PREPROCESSOR_PATH}")
-logger.info(f"   Существует модель: {os.path.exists(MODEL_PATH)}")
-logger.info(f"   Существует препроцессор: {os.path.exists(PREPROCESSOR_PATH)}")
-
-class SimpleInferenceEngine:
-    def __init__(self):
-        self.model = None
-        self.preprocessor = None
-        self.load_model()
-    
-    def load_model(self):
-        """Загрузка модели и препроцессора"""
-        try:
-            logger.info(f"🔄 Проверка файлов...")
-            logger.info(f"   MODEL_PATH exists: {os.path.exists(MODEL_PATH)}")
-            logger.info(f"   PREPROCESSOR_PATH exists: {os.path.exists(PREPROCESSOR_PATH)}")
-            
-            if os.path.exists(MODEL_PATH) and os.path.exists(PREPROCESSOR_PATH):
-                logger.info("🔄 Загрузка модели и препроцессора...")
-                
-                # Загружаем модель
-                with open(MODEL_PATH, 'rb') as f:
-                    self.model = pickle.load(f)
-                logger.info(f"✅ Модель загружена: {type(self.model).__name__}")
-                
-                # Загружаем препроцессор
-                with open(PREPROCESSOR_PATH, 'rb') as f:
-                    self.preprocessor = pickle.load(f)
-                logger.info(f"✅ Препроцессор загружен: {type(self.preprocessor).__name__}")
-                
-                # Проверяем атрибуты модели
-                if hasattr(self.model, 'n_features_in_'):
-                    logger.info(f"📊 Модель ожидает {self.model.n_features_in_} признаков")
-                
-            else:
-                missing_files = []
-                if not os.path.exists(MODEL_PATH):
-                    missing_files.append(MODEL_PATH)
-                if not os.path.exists(PREPROCESSOR_PATH):
-                    missing_files.append(PREPROCESSOR_PATH)
-                    
-                logger.error(f"❌ Файлы не найдены: {missing_files}")
-                logger.error("💡 Решение: Запустите script_1.py для обучения модели")
-                
-        except Exception as e:
-            logger.error(f"❌ Ошибка загрузки модели: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-    
-    def predict(self, data):
-        """Предсказание для данных"""
-        if self.model is None or self.preprocessor is None:
-            raise ValueError("Модель или препроцессор не загружены")
-        
-        try:
-            # Преобразование входных данных в DataFrame
-            if isinstance(data, dict):
-                X_df = pd.DataFrame([data])
-            elif isinstance(data, list):
-                X_df = pd.DataFrame(data)
-            else:
-                X_df = data
-                
-            logger.info(f"📊 Входные данные: {X_df.shape}")
-            logger.info(f"📋 Колонки: {list(X_df.columns)}")
-                
-            # Преобразование данных
-            X_processed = self.preprocessor.transform(X_df)
-            logger.info(f"🔧 Данные после препроцессинга: {X_processed.shape}")
-            
-            # Предсказание
-            prediction = self.model.predict(X_processed)
-            probability = self.model.predict_proba(X_processed)
-            
-            # Формируем результат
-            if len(prediction) == 1:
-                # Одиночное предсказание
-                return {
-                    'prediction': int(prediction[0]),
-                    'probability_class_0': float(probability[0][0]),
-                    'probability_class_1': float(probability[0][1]),
-                    'confidence': float(np.max(probability[0]))
-                }
-            else:
-                # Пакетное предсказание
-                results = []
-                for i in range(len(prediction)):
-                    results.append({
-                        'prediction': int(prediction[i]),
-                        'probability_class_0': float(probability[i][0]),
-                        'probability_class_1': float(probability[i][1]),
-                        'confidence': float(np.max(probability[i]))
-                    })
-                return results
-                
-        except Exception as e:
-            logger.error(f"❌ Ошибка предсказания: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            raise
-
 def initialize_engine():
-    """Инициализация движка"""
+    """Инициализация движка для предсказаний"""
     global inference_engine
     logger.info("🔄 Инициализация модели...")
-    inference_engine = SimpleInferenceEngine()
     
-    if inference_engine.model is not None and inference_engine.preprocessor is not None:
-        logger.info("✅ Модель успешно инициализирована")
-        return True
-    else:
-        logger.error("❌ Не удалось инициализировать модель")
+    try:
+        inference_engine = InferenceEngine()
+        
+        if inference_engine.model is not None and inference_engine.preprocessor is not None:
+            logger.info("✅ Модель успешно загружена")
+            return True
+        else:
+            logger.error("❌ Не удалось загрузить модель или препроцессор")
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ Ошибка инициализации: {e}")
         return False
 
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint"""
-    if inference_engine and inference_engine.model is not None:
-        return jsonify({
-            'status': 'healthy', 
-            'model_loaded': True,
+    status = {
+        'status': 'healthy' if inference_engine and inference_engine.model else 'degraded',
+        'model_loaded': bool(inference_engine and inference_engine.model),
+        'message': 'API is working correctly'
+    }
+    
+    if inference_engine and inference_engine.model:
+        status.update({
             'model_type': type(inference_engine.model).__name__,
-            'message': 'API and model are working correctly'
+            'preprocessor_type': type(inference_engine.preprocessor).__name__
         })
     else:
-        return jsonify({
-            'status': 'degraded', 
-            'model_loaded': False,
-            'message': 'Model not loaded. Please train model first using script_1.py'
-        }), 503
+        status['message'] = 'Model not loaded. Please train model first using main.py'
+    
+    return jsonify(status)
 
 @app.route('/predict', methods=['POST'])
 def predict():
     """Endpoint для предсказаний"""
-    if inference_engine is None or inference_engine.model is None:
+    if not inference_engine or not inference_engine.model:
         return jsonify({
-            'error': 'Model not loaded', 
-            'message': 'Please train model first using script_1.py',
-            'solution': 'Run: python script_1.py to train the model'
+            'error': 'Model not loaded',
+            'message': 'Please train model first using main.py'
         }), 503
     
     try:
@@ -171,11 +72,11 @@ def predict():
         if not data:
             return jsonify({'error': 'No data provided'}), 400
         
-        logger.info(f"📥 Получены данные для предсказания: {data}")
+        logger.info(f"📥 Получены данные для предсказания")
         
         # Предсказание
         result = inference_engine.predict(data)
-        logger.info(f"✅ Предсказание завершено: {result}")
+        logger.info(f"✅ Предсказание завершено")
         
         return jsonify({
             'result': result,
@@ -185,14 +86,52 @@ def predict():
     except Exception as e:
         logger.error(f"❌ Ошибка предсказания: {e}")
         return jsonify({
-            'error': str(e),
-            'message': 'Prediction failed'
+            'error': 'Prediction failed',
+            'message': str(e)
+        }), 500
+
+@app.route('/batch_predict', methods=['POST'])
+def batch_predict():
+    """Endpoint для пакетных предсказаний"""
+    if not inference_engine or not inference_engine.model:
+        return jsonify({
+            'error': 'Model not loaded',
+            'message': 'Please train model first using main.py'
+        }), 503
+    
+    try:
+        data = request.get_json()
+        
+        if not data or not isinstance(data, list):
+            return jsonify({'error': 'Data must be a list of records'}), 400
+        
+        logger.info(f"📥 Получено {len(data)} записей для пакетного предсказания")
+        
+        # Пакетное предсказание
+        import pandas as pd
+        df = pd.DataFrame(data)
+        results = inference_engine.batch_predict(df)
+        
+        if results is not None:
+            return jsonify({
+                'results': results.to_dict('records'),
+                'status': 'success',
+                'count': len(results)
+            })
+        else:
+            return jsonify({'error': 'Batch prediction failed'}), 500
+            
+    except Exception as e:
+        logger.error(f"❌ Ошибка пакетного предсказания: {e}")
+        return jsonify({
+            'error': 'Batch prediction failed',
+            'message': str(e)
         }), 500
 
 @app.route('/model/info', methods=['GET'])
 def model_info():
-    """Информация о модели"""
-    if inference_engine is None or inference_engine.model is None:
+    """Информация о загруженной модели"""
+    if not inference_engine or not inference_engine.model:
         return jsonify({
             'error': 'Model not loaded',
             'message': 'Please train model first'
@@ -205,43 +144,71 @@ def model_info():
             'preprocessor_type': type(inference_engine.preprocessor).__name__,
         }
         
-        # Добавляем информацию о фичах если доступно
+        # Информация о модели
         if hasattr(inference_engine.model, 'n_features_in_'):
-            info['features_count'] = inference_engine.model.n_features_in_
+            info['n_features'] = inference_engine.model.n_features_in_
         
         if hasattr(inference_engine.model, 'n_estimators'):
             info['n_estimators'] = inference_engine.model.n_estimators
             
+        if hasattr(inference_engine.model, 'classes_'):
+            info['classes'] = inference_engine.model.classes_.tolist()
+            
         return jsonify(info)
+        
     except Exception as e:
+        logger.error(f"❌ Ошибка получения информации о модели: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/', methods=['GET'])
 def index():
-    """Главная страница"""
+    """Главная страница API"""
     model_status = "loaded" if inference_engine and inference_engine.model else "not loaded"
     
+    endpoints = {
+        'GET /': 'Информация о API',
+        'GET /health': 'Статус здоровья API и модели',
+        'GET /model/info': 'Информация о загруженной модели',
+        'POST /predict': 'Предсказание для одной записи',
+        'POST /batch_predict': 'Пакетное предсказание для нескольких записей'
+    }
+    
     return jsonify({
-        'message': 'ML API Server',
+        'message': 'ML Model API Server',
         'model_status': model_status,
-        'status': 'API is running' if model_status == 'loaded' else 'API running but model not loaded',
-        'endpoints': {
-            'GET /': 'Эта страница',
-            'GET /health': 'Статус здоровья API и модели',
-            'GET /model/info': 'Информация о загруженной модели',
-            'POST /predict': 'Предсказание (требует JSON с features)'
-        },
-        'example_request': {
-            'url': 'POST /predict',
+        'version': '1.0',
+        'endpoints': endpoints,
+        'example_predict': {
+            'method': 'POST',
+            'url': '/predict',
             'body': {'feature1': 0.5, 'feature2': 1.2, 'feature3': -0.3}
+        },
+        'example_batch_predict': {
+            'method': 'POST', 
+            'url': '/batch_predict',
+            'body': [
+                {'feature1': 0.5, 'feature2': 1.2, 'feature3': -0.3},
+                {'feature1': 0.1, 'feature2': 0.8, 'feature3': 0.2}
+            ]
         }
     })
 
-# Инициализация при запуске
+# Инициализация при импорте
 initialize_engine()
 
 if __name__ == '__main__':
-    logger.info("🚀 Starting ML API server...")
+    logger.info("🚀 Starting ML API Server...")
+    
+    # Проверяем инициализацию
+    if inference_engine and inference_engine.model:
+        logger.info("✅ Model loaded successfully")
+        logger.info(f"📊 Model: {type(inference_engine.model).__name__}")
+        logger.info(f"🔧 Preprocessor: {type(inference_engine.preprocessor).__name__}")
+    else:
+        logger.warning("⚠️  Model not loaded - please train model first")
+        logger.info("💡 Run: python main.py to train the model")
+    
+    # Запуск сервера
     from waitress import serve
-    logger.info("🌐 API server listening on http://0.0.0.0:8000")
+    logger.info("🌐 Server starting on http://0.0.0.0:8000")
     serve(app, host='0.0.0.0', port=8000)
